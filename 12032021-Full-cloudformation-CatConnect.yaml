@@ -1,0 +1,667 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Catconnect Gateway and Lambda function
+Parameters:
+  apiGatewayName:
+    Type: String
+    Default: CatConnectAPIname
+    Description: Create new api gateway
+  apiGatewayStageName:
+    Type: String
+    AllowedPattern: '[a-z0-9]+'
+    Default: development
+    Description: Create deployment stage
+  apiGatewayHTTPMethod:
+    Type: String
+    Default: GET
+  lambdaListFunctionNameList:
+    Type: String
+    AllowedPattern: '[a-zA-Z0-9]+[a-zA-Z0-9-]+[a-zA-Z0-9]+'
+    Default: Catconnectlist
+  lambdaListFunctionmetadata:
+    Type: String
+    AllowedPattern: '[a-zA-Z0-9]+[a-zA-Z0-9-]+[a-zA-Z0-9]+'
+    Default: metadata
+    Description: function name for metadata list
+  S3bucketorginal:
+    Type: String
+    Default: s3catconnectorginal
+    Description: Create s3 bucket for orginal files
+  S3bucketThumbnail:
+    Type: String
+    Default: s3catconnectthumbnail
+    Description: Create s3 bucket for thumbnails
+  metadatadatabaseMetadata:
+    Type: String
+    Default: catconnectdb
+    Description: Create metadata database
+  maxDimensionThumbnails:
+    Default: 160
+    Type: Number
+    Description: Maximum dimension length in pixels
+Resources:
+  SNSTopic:
+    Type: 'AWS::SNS::Topic'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 4aed5f69-b01e-4b74-b4fa-97f255214f93
+  Subscriptiondb:
+    Type: 'AWS::SNS::Subscription'
+    Properties:
+      Endpoint: !GetAtt 
+        - s3triggertometadata
+        - Arn
+      Protocol: lambda
+      TopicArn: !Ref SNSTopic
+    DependsOn:
+      - s3triggertometadata
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 998e25dd-eed5-4c04-8538-2b8af53e3d7d
+  LambdaInvokedb:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref SNSTopic
+      FunctionName: !Ref s3triggertometadata
+  Apilist:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      PathPart: list
+      RestApiId: !Ref apiGateway
+      ParentId: !GetAtt 
+        - apiGateway
+        - RootResourceId
+  Apidownload:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      PathPart: download
+      RestApiId: !Ref apiGateway
+      ParentId: !GetAtt 
+        - apiGateway
+        - RootResourceId
+  Apidownloadmethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      HttpMethod: ANY
+      RestApiId: !Ref apiGateway
+      ResourceId: !Ref Apidownload
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: !Ref Apimodel
+      RequestModels:
+        application/json: !Ref Apimodel
+      Integration:
+        Type: AWS
+        Credentials: !GetAtt 
+          - lambdaIAMRole
+          - Arn
+        Uri: !Sub 
+          - >-
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaDownArn}/invocations
+          - lambdaDownArn: !GetAtt 
+              - S3DownFunction
+              - Arn
+        IntegrationHttpMethod: POST
+        IntegrationResponses:
+          - StatusCode: 200
+  S3DownFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        ZipFile: !Sub |
+          import logging
+          import boto3
+          from botocore.exceptions import ClientError
+          import json
+          import urllib
+          def lambda_handler(event, context):
+              s3_client = boto3.client('s3')
+              try:
+                  bucket_name= '${S3bucketorginal}'
+                  presigned_download_url = s3_client.generate_presigned_url(
+                          ClientMethod='get_object', ExpiresIn=18000,
+                          Params={
+                              'Bucket': bucket_name,
+                              'Key': event['object_id'],
+                              
+                              })    
+              except ClientError as e:
+                  logging.error(e)
+                  return None
+
+              return {
+              "isBase64Encoded": False,
+              "statusCode": 200,
+              "headers": { "Access-Control-Allow-Origin": "*"},
+              "body": presigned_download_url
+              }
+      Handler: index.lambda_handler
+      Runtime: python3.8
+      MemorySize: 128
+      Role: !GetAtt 
+        - lambdaIAMRole
+        - Arn
+      FunctionName: S3DownFunction
+  Apiupload:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      PathPart: upload
+      RestApiId: !Ref apiGateway
+      ParentId: !GetAtt 
+        - apiGateway
+        - RootResourceId
+  Apiuploadmethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      HttpMethod: ANY
+      RestApiId: !Ref apiGateway
+      ResourceId: !Ref Apiupload
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: !Ref Apimodel
+      RequestModels:
+        application/json: !Ref Apimodel
+      Integration:
+        Type: AWS
+        Credentials: !GetAtt 
+          - lambdaIAMRole
+          - Arn
+        Uri: !Sub 
+          - >-
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaUpArn}/invocations
+          - lambdaUpArn: !GetAtt 
+              - S3UpFunction
+              - Arn
+        IntegrationHttpMethod: POST
+        IntegrationResponses:
+          - StatusCode: 200
+  S3UpFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        ZipFile: !Sub |
+          import logging
+          import boto3
+          from botocore.exceptions import ClientError
+          import json
+          import datetime
+          import random
+          from random import randint
+
+          def lambda_handler(event, context):
+              s3_client = boto3.client('s3')
+              try:
+                  bucket_name= '${S3bucketorginal}'
+                  random_object_id= str(randint(0, 1000000))+'.jpg'
+                  object_url = 'https://${S3bucketorginal}.s3.amazonaws.com/'+random_object_id
+                  upload_time = str(datetime.datetime.today())
+                  cat_colour = event['cat_colour']
+                  upload_id = event['user_id']
+                  
+                  presigned_upload_url = s3_client.generate_presigned_url(
+                          ClientMethod='put_object',
+                          Params={
+                              'Bucket': bucket_name,
+                              'Key': random_object_id,
+                              'ACL':'private',
+                              'ContentType': 'image/jpeg',
+                              'Expires': 8000,
+                              'Metadata':{ 
+                                  'upload_time': upload_time,
+                                  'upload_id':upload_id,
+                                  'cat_colour':cat_colour,
+                                  'url_object': object_url
+                              }
+                  }
+              )    
+              except ClientError as e:
+                  logging.error(e)
+                  return None
+              print(presigned_upload_url)
+              return {
+              "isBase64Encoded": False,
+              "statusCode": 200,
+              "headers": { 'Access-Control-Allow-Origin': '*'},
+              "body": presigned_upload_url
+              }
+      Handler: index.lambda_handler
+      Runtime: python3.8
+      MemorySize: 128
+      Role: !GetAtt 
+        - lambdaIAMRole
+        - Arn
+      FunctionName: S3UpFunction
+  Apithumbnail:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      PathPart: thumbnail
+      RestApiId: !Ref apiGateway
+      ParentId: !GetAtt 
+        - apiGateway
+        - RootResourceId
+  Apithumbnailmethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      HttpMethod: ANY
+      RestApiId: !Ref apiGateway
+      ResourceId: !Ref Apithumbnail
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: !Ref Apimodel
+      RequestModels:
+        application/json: !Ref Apimodel
+      Integration:
+        Type: AWS
+        Credentials: !GetAtt 
+          - lambdaIAMRole
+          - Arn
+        Uri: !Sub 
+          - >-
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdathumbnailArn}/invocations
+          - lambdathumbnailArn: !GetAtt 
+              - S3thumbnailFunction
+              - Arn
+        IntegrationHttpMethod: POST
+        IntegrationResponses:
+          - StatusCode: 200
+  S3thumbnailFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        ZipFile: !Sub |
+          import logging
+          import boto3
+          from botocore.exceptions import ClientError
+          import json
+          import urllib
+          def lambda_handler(event, context):
+              s3_client = boto3.client('s3')
+              try:
+                  bucket_name= '${S3bucketThumbnail}'
+                  presigned_thumbnail_url = s3_client.generate_presigned_url(
+                          ClientMethod='get_object', ExpiresIn=18000,
+                          Params={
+                              'Bucket': bucket_name,
+                              'Key': event['object_id'],
+                              
+                              })    
+              except ClientError as e:
+                  logging.error(e)
+                  return None
+
+              return {
+              "isBase64Encoded": False,
+              "statusCode": 200,
+              "headers": { "Access-Control-Allow-Origin": "*"},
+              "body": presigned_thumbnail_url
+              }
+      Handler: index.lambda_handler
+      Runtime: python3.8
+      MemorySize: 128
+      Role: !GetAtt 
+        - lambdaIAMRole
+        - Arn
+      FunctionName: S3thumbnailFunction
+  Apimetadata:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      PathPart: metadata
+      RestApiId: !Ref apiGateway
+      ParentId: !GetAtt 
+        - apiGateway
+        - RootResourceId
+  apimetadataMethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        IntegrationHttpMethod: POST
+        IntegrationResponses:
+          - StatusCode: 200
+        Credentials: !GetAtt 
+          - lambdaIAMRole
+          - Arn
+        Type: AWS
+        Uri: !Sub 
+          - >-
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaMetaArn}/invocations
+          - lambdaMetaArn: !GetAtt 
+              - lambdametadatFunction
+              - Arn
+      ResourceId: !Ref Apimetadata
+      RestApiId: !Ref apiGateway
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: !Ref Apimodel
+      RequestModels:
+        application/json: !Ref Apimodel
+  apiGatewaylistMethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: !Ref apiGatewayHTTPMethod
+      Integration:
+        IntegrationHttpMethod: POST
+        IntegrationResponses:
+          - StatusCode: 200
+        Credentials: !GetAtt 
+          - lambdaIAMRole
+          - Arn
+        Type: AWS
+        Uri: !Sub 
+          - >-
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaListArn}/invocations
+          - lambdaListArn: !GetAtt 
+              - lambdaListFunction
+              - Arn
+      ResourceId: !Ref Apilist
+      RestApiId: !Ref apiGateway
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: !Ref Apimodel
+      RequestModels:
+        application/json: !Ref Apimodel
+  Apimodel:
+    Type: 'AWS::ApiGateway::Model'
+    Properties:
+      Name: gatewaymodel
+      ContentType: application/json
+      RestApiId: !Ref apiGateway
+      Schema: {}
+  Catconnectbucketcloudformation:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Function: !GetAtt 
+              - transform
+              - Arn
+            Event: 's3:ObjectCreated:*'
+      BucketName: !Ref S3bucketorginal
+      AccessControl: Private
+    DependsOn:
+      - transformuploadPermission
+  transformuploadPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      SourceAccount: !Ref 'AWS::AccountId'
+      FunctionName: !Ref transform
+      Principal: s3.amazonaws.com
+  transform:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: awsserverlessrepo-changesets-18ssd5swmy82n
+        S3Key: >-
+          307624291587/arn:aws:serverlessrepo:us-east-1:233054207705:applications-resize-versions-1.1.0/2121aac2-1db8-413f-a3e1-2a0be88a6522
+      Description: Transforms images by resizing to a configured max dimension
+      Tags:
+        - Value: SAM
+          Key: 'lambda:createdBy'
+      MemorySize: 1536
+      Environment:
+        Variables:
+          DEST_BUCKET: !Ref S3bucketThumbnail
+          MAX_DIMENSION: !Ref maxDimensionThumbnails
+      Handler: src/index.handler
+      Role: !GetAtt 
+        - transformRole
+        - Arn
+      Timeout: 300
+      Runtime: nodejs12.x
+  transformRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonAPIGatewayInvokeFullAccess'
+        - 'arn:aws:iam::aws:policy/AWSLambda_FullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess'
+      Policies:
+        - PolicyName: transformRolePolicy0
+          PolicyDocument:
+            Statement:
+              - Action:
+                  - 's3:GetObject'
+                  - 's3:ListBucket'
+                  - 's3:GetBucketLocation'
+                  - 's3:GetObjectVersion'
+                  - 's3:GetLifecycleConfiguration'
+                Resource:
+                  - !Sub 
+                    - 'arn:${AWS::Partition}:s3:::${bucketName}'
+                    - bucketName: !Ref S3bucketorginal
+                Effect: Allow
+        - PolicyName: transformRolePolicy1
+          PolicyDocument:
+            Statement:
+              - Action:
+                  - 's3:GetObject'
+                  - 's3:ListBucket'
+                  - 's3:GetBucketLocation'
+                  - 's3:GetObjectVersion'
+                  - 's3:PutObject'
+                  - 's3:PutObjectAcl'
+                  - 's3:GetLifecycleConfiguration'
+                  - 's3:PutLifecycleConfiguration'
+                  - 's3:DeleteObject'
+                Resource:
+                  - !Sub 
+                    - 'arn:${AWS::Partition}:s3:::${bucketName}'
+                    - bucketName: !Ref S3bucketThumbnail
+                Effect: Allow
+  Catconnectthumbnailscloudformation:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Ref S3bucketThumbnail
+      AccessControl: Private
+    DependsOn:
+      - Catconnectbucketcloudformation
+  dbcatconnect:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: !Ref metadatadatabaseMetadata
+      KeySchema:
+        HashKeyElement:
+          AttributeName: picture_id
+          AttributeType: S
+      ProvisionedThroughput:
+        ReadCapacityUnits: '5'
+        WriteCapacityUnits: '5'
+  apiGateway:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Description: catconnect API Gateway
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Name: !Ref apiGatewayName
+  apiGatewayDeployment:
+    Type: 'AWS::ApiGateway::Deployment'
+    DependsOn:
+      - apimetadataMethod
+      - apiGatewaylistMethod
+      - Apiuploadmethod
+      - Apidownloadmethod
+      - Apithumbnailmethod
+    Properties:
+      RestApiId: !Ref apiGateway
+      StageName: !Ref apiGatewayStageName
+  lambdaListFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        ZipFile: !Sub |
+          import boto3
+          import json
+          from boto3 import client
+
+          s3=client('s3')
+          def handler(event,context):
+              try:
+                  list=[]
+                  for key in s3.list_objects(Bucket='${S3bucketorginal}')['Contents']:
+                      list.append((key['Key']))
+              except:
+                  return {"Bucket":"empty"}
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps(list)
+              }
+      Description: List Lambda fucntion cloud formation
+      FunctionName: !Ref lambdaListFunctionNameList
+      Handler: index.handler
+      MemorySize: 128
+      Role: !GetAtt 
+        - lambdaIAMRole
+        - Arn
+      Runtime: python3.8
+  lambdametadatFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        ZipFile: !Sub |
+          from __future__ import print_function
+          import boto3
+          import json
+
+          s3=boto3.client('s3')
+          cn_bucket='${S3bucketorginal}'
+
+          def handler(event, context):
+              try:
+                  list=[]
+                  for key in s3.list_objects(Bucket=cn_bucket)['Contents']:
+                      response = s3.head_object(Bucket=cn_bucket, Key=(key['Key']))
+                      list.append(str(key['Key']))
+                      response1=('Metadata: {}'.format(response.get('Metadata')))
+                      list.append(response1)
+              except:
+                  return {"Bucket":"empty"}
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps(list)
+              }
+      Description: List metadata in s3
+      FunctionName: !Ref lambdaListFunctionmetadata
+      Handler: index.handler
+      MemorySize: 128
+      Role: !GetAtt 
+        - lambdaIAMRole
+        - Arn
+      Runtime: python3.8
+  lambdaApiGatewayListInvoke:
+    Type: 'AWS::Lambda::Permission'
+    DependsOn:
+      - lambdaListFunction
+      - apiGateway
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt 
+        - lambdaListFunction
+        - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub >-
+        arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/${apiGatewayStageName}/${apiGatewayHTTPMethod}/
+  lambdaIAMRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+                - apigateway.amazonaws.com
+                - s3.amazonaws.com
+      Policies:
+        - PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Effect: Allow
+                Resource:
+                  - !Sub >-
+                    arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${lambdaListFunctionNameList}:*
+          PolicyName: lambda
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonAPIGatewayInvokeFullAccess'
+        - 'arn:aws:iam::aws:policy/AWSLambda_FullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonSNSFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess'
+  s3triggertometadata:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        ZipFile: !Sub |
+          import json
+          import boto3
+          def lambda_handler(event, context):
+              s3 = boto3.client("s3")
+              if event:
+                  print("Event: ", event)
+                  file_obj = event["Records"][0]
+                  filename = str(file_obj['s3']['object']['key'])
+                  print("Filename: ", filename)
+                  fileObj = s3.get_object(Bucket='${S3bucketorginal}', Key=filename)
+                  file_content=(format(fileObj.get('Metadata')))
+                  json_acceptable_string = file_content.replace("'", "\"")
+                  d = json.loads(json_acceptable_string)
+                  metadata_db = boto3.resource('metadata')
+                  metadataTable = metadata_db.Table('${dbcatconnect}')
+                  response = metadataTable.put_item(
+                  Item={
+                      'picture_id': filename,
+                      'url_object': (d.get("url_object")),
+                      'cat_colour': (d.get("cat_colour")),
+                      'upload_id': (d.get("upload_id")),
+                      'upload_time': (d.get("upload_time"))
+                      }) 
+              return {
+                  'statusCode': 200,
+                  'body': response
+              }
+      Handler: index.lambda_handler
+      Runtime: python3.8
+      MemorySize: 128
+      Role: !GetAtt 
+        - lambdaIAMRole
+        - Arn
+      FunctionName: s3triggertometadata
+Outputs:
+  apiGatewayInvokeURL:
+    Value: !Sub >-
+      https://${apiGateway}.execute-api.${AWS::Region}.amazonaws.com/${apiGatewayStageName}
+  lambdaListArn:
+    Value: !GetAtt 
+      - lambdaListFunction
+      - Arn
