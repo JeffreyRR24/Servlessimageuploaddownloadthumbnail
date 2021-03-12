@@ -115,20 +115,20 @@ if what < "6":
 
 
     if __name__ == "__main__":
-        print('input nothing if not applicable')  
-        user = input('input user_id :')
-        catcolour = input('input the cats colour, or something :')
-        picture = input('input picture path :')
-        object_id = input('insert a object id pls :')
         if what == "1":
             catconnect(object_id, user, catcolour, picture, api_id).list_objects()
         if what == "2":
             catconnect(object_id, user, catcolour, picture, api_id).list_metadata()
         if what == "3":
+            object_id = input('insert a object id:')
             catconnect(object_id, user, catcolour, picture, api_id).download()
         if what == "4":
+            object_id = input('insert a object id:')
             catconnect(object_id, user, catcolour, picture, api_id).download_thumbnail()
         if what == "5":
+            user = input('input user_id :')
+            catcolour = input('input the cats colour, or something :')
+            picture = input('input picture path :')
             catconnect(object_id, user, catcolour, picture, api_id).upload()
         #invoke the class catconnect and pass along all the needed __init__ fields. these can be empty if they dont apply.
         #invoke function. available; .list_objects() .list_metadata() .download() .download_thumbnail() .upload()
