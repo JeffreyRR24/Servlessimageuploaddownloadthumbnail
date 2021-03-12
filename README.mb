@@ -1,19 +1,21 @@
 # Techgrounds
 # catconnect Team blue /Jeffrey Rupp /Lydia Mahakena /Bram Janssen
-the template to be deployed in cloudformation is template.yaml
-this makes the infrastructure according to template1-designer.png
+The template to be deployed in cloudformation is template.yaml
+This makes the infrastructure according to template1-designer.png
 
-the api consists of the resources
+#########################   Important ###########################################
+replace api_id in picture-get-upload-aws.py with the api id when the cloudformation template is create_complete.
+
+
+The api consists of the resources
  - list objects
  - list metadata
  - download image
  - download thumbnail
  - upload image
 
-whereby list objects and list metadata list information about our primary s3 bucket
-download image and upload image deliver a presigned url to interact with the primary s3 bucket
-download thumbnail gets a smaller image from the secondary bucket
+Whereby list objects and list metadata list information about our primary s3 bucket.
+Download image and upload image deliver a presigned url to interact with the primary s3 bucket.
+Download thumbnail gets a smaller image from the secondary bucket.
 
-picture-get-upload-aws.py is an example script of how to interact with our api resources.
-
-#Important replace api_id in picture-get-upload-aws.py with the api id when the cloudformation template is create_complete.
+Picture-get-upload-aws.py is an example script of how to interact with our api resources.
