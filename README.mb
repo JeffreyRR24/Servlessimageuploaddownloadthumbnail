@@ -19,3 +19,12 @@ Download image and upload image deliver a presigned url to interact with the pri
 Download thumbnail gets a smaller image from the secondary bucket.
 
 Picture-get-upload-aws.py is an example script of how to interact with our api resources.
+
+######################### To Do ###############################
+No user data is send to dynamodb for billing.
+Metadata in upload is not working.
+	Workaround. Metadata is getting listed from the s3 bucket
+More parameters should be made for all the functions
+Parameter static applications should be removed as this needs to be hard coded.
+	- You can think about API methode GET.
+SNS topic is now not being used as sending metadata to dynamodb and listing it from dynamodb is not working.
