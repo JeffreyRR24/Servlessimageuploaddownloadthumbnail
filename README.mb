@@ -14,4 +14,6 @@ whereby list objects and list metadata list information about our primary s3 buc
 download image and upload image deliver a presigned url to interact with the primary s3 bucket
 download thumbnail gets a smaller image from the secondary bucket
 
-super_classy.py is an example script of how to interact with our api resources.
+picture-get-upload-aws.py is an example script of how to interact with our api resources.
+
+#Important replace api_id in picture-get-upload-aws.py with the api id when the cloudformation template is create_complete.
