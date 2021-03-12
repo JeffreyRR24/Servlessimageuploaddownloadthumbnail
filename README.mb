@@ -2,10 +2,10 @@
 # catconnect Team blue /Jeffrey Rupp /Lydia Mahakena /Bram Janssen
 The template to be deployed in cloudformation is template.yaml
 This makes the infrastructure according to architecture_catconnect.drawio
+You can open architecture_catconnect.drawio with https://app.diagrams.net/
 
 #########################   Important ###########################################
 replace api_id in picture-get-upload-aws.py with the api id when the cloudformation template is create_complete.
-
 
 The api consists of the resources
  - list objects
